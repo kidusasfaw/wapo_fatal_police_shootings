@@ -25,20 +25,45 @@ df.loc <- na.omit(cbind(df.loc, lonlat)) # remove NA
 
 saveRDS(df.loc, "~/Documents/Grad_school/Winter_2017/Stats 601/Project/df.loc.RDS") # save df.loc because it takes forever to pull data from google
 df.loc <- readRDS("~/Documents/Grad_school/Winter_2017/Stats 601/Project/df.loc.RDS")
+df.loc <- cbind(df.loc, unique(df.fatal, df.fatal$state))
 
-US <- map_data("state") # get US map data
+US <- map_data("state") # get US map data, white map
 
-# plot
+# devtools::install_github("hadley/ggplot2@v2.2.0") need old version for google maps
+df.loc$city.state <- as.character(df.loc$city.state)
+hawaii <- df.loc[grepl("HI$",df.loc$city.state),]
+alaska <- df.loc[grepl("AK$",df.loc$city.state),]
+
+
+# plot using US
 ggplot(data=US, aes(x=long, y=lat, group=group)) +
   geom_polygon(fill="white", colour="black") +
   xlim(-160, 60) + ylim(25,75) +
   geom_point(data=df.loc, inherit.aes=F, aes(x=lon, y=lat, size=Freq), colour="blue",  alpha=.8) +
   coord_cartesian(xlim = c(-130, -50), ylim=c(20,55)) 
-  
-map <- get_map(location=c(lon = -98.35, lat = 39.50), zoom = 4, source="google",maptype="roadmap",crop=FALSE)
-ggmap(map, legend = "none") + 
-  geom_point(aes(x = lon, y = lat), data = df.loc, alpha = .7, color = "darkgreen", size = (testdata$Total.Conversions)/5000)
 
+# plot using google map 
+# US
+map <- get_map(location=c(lon = -98.35, lat = 39.70), zoom = 4, source="google",maptype="roadmap",crop=FALSE)
+ggmap(map, legend = "none") + 
+  geom_point(aes(x = lon, y = lat, size=Freq), data = df.loc, alpha = .7, color = "darkblue") +
+  theme(axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank())
+# Alaska
+map <- get_map(location = "alaska", zoom = 4)
+ggmap(map, legend = "none") + 
+  geom_point(aes(x = lon, y = lat, size=Freq), data = alaska, alpha = .7, color = "darkblue") +
+  theme(axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank())
+#Hawaii
+map <- get_map(location = "hawaii", zoom = 7)
+ggmap(map, legend = "none") + 
+  geom_point(aes(x = lon, y = lat, size=Freq), data = hawaii, alpha = .7, color = "darkblue") +
+  theme(axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank())
 
 
 # create distance matrix for visualization, use Gower distance
@@ -105,8 +130,14 @@ tsne_data <- tsne_obj$Y %>%
 
 # too many variables of interest, but still good to look at for us
 tsne_data <-  data.frame(cluster = factor(pam_fit2$clustering), df.fatal.clean, tsne_data)
-ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color = cluster, shape=race, size=threat_level))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=flee))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=manner_of_death))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=signs_of_mental_illness))
+
 
 tsne_data <-  data.frame(cluster = factor(pam_fit7$clustering), df.fatal.clean, tsne_data)
-ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color = cluster, shape=race, size=threat_level))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=race))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=threat_level))
+
+
 
