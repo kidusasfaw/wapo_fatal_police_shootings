@@ -1,11 +1,12 @@
 library(ggplot2)
 library(ggmap)
 library(maps)
+library(cluster)
+library(Rtsne)
 library(plyr)
+library(dplyr)
 library(tidyr)
-library(rjson)
-library(jsonlite)
-library(readr)
+
 df.all <- read.table("~/Documents/Data/601/Project/gvdb-aggregated-db/Events.tsv",
                      sep="\t", header=TRUE, fill=TRUE)
 
@@ -47,10 +48,65 @@ df.na <- df.fatal[rowSums(is.na(df.fatal)) > 0,] # see rows with missing values
 drop <- c('name', 'date', 'city.state', 'city', 'state')
 df.fatal.clean <- df.fatal[ , !(names(df.fatal) %in% drop)]
 
+gower_dist <- daisy(df.fatal.clean[, -1],
+                    metric = "gower",
+                    type = list(logratio = 3))
+# Sanity check
+gower_mat <- as.matrix(gower_dist)
+
+# Output most similar pair
+df.fatal.clean[which(gower_mat == min(gower_mat[gower_mat != min(gower_mat)]),
+        arr.ind = TRUE)[1, ], ]
+
+# Output most dissimilar pair
+df.fatal.clean[which(gower_mat == max(gower_mat[gower_mat != max(gower_mat)]),
+        arr.ind = TRUE)[1, ], ]
 
 
+# Calculate silhouette width for many k using PAM
+sil_width <- c(NA)
 
+for(i in 2:10){
+  pam_fit <- pam(gower_dist,
+                 diss = TRUE,
+                 k = i)
+  sil_width[i] <- pam_fit$silinfo$avg.width
+}
 
+# Plot sihouette width (higher is better)
 
+plot(1:10, sil_width,
+     xlab = "Number of clusters",
+     ylab = "Silhouette Width")
+lines(1:10, sil_width)
 
+# looks like K = 2, but lets also check K=7
+pam_fit2 <- pam(gower_dist, diss = TRUE, k = 2)
+pam_fit7 <- pam(gower_dist, diss = TRUE, k = 7)
+
+pam_results <- df.fatal.clean %>% dplyr::select(-id) %>%
+  mutate(cluster = pam_fit7$clustering) %>%
+  group_by(cluster) %>%
+  do(the_summary = summary(.))
+
+pam_results$the_summary
+# Looks to be clustered by threat level and race
+
+# Look at metoids
+df.fatal.clean[pam_fit2$medoids, ]
+df.fatal.clean[pam_fit7$medoids, ]
+
+# plot, dimension reduction using tSNE, t-distributed stochastic neighborhood embedding
+tsne_obj <- Rtsne(gower_dist, is_distance = TRUE)
+
+tsne_data <- tsne_obj$Y %>%
+  data.frame() %>%
+  setNames(c("X", "Y"))
+
+# too many variables of interest, but still good to look at for us
+tsne_data <-  data.frame(cluster = factor(pam_fit2$clustering), df.fatal.clean, tsne_data)
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color = cluster, shape=race, size=threat_level))
+
+tsne_data <-  data.frame(cluster = factor(pam_fit7$clustering), df.fatal.clean, tsne_data)
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color = cluster, shape=race, size=threat_level))
 
