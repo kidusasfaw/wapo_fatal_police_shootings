@@ -23,9 +23,18 @@ names(df.loc)[1] <- 'city.state'
 lonlat <- geocode(as.character(df.loc$city.state), source = 'dsk') # get latitude and longitude
 df.loc <- na.omit(cbind(df.loc, lonlat)) # remove NA
 
-saveRDS(df.loc, "~/Documents/Grad_school/Winter_2017/Stats 601/Project/df.loc.RDS") # save df.loc because it takes forever to pull data from google
-df.loc <- readRDS("~/Documents/Grad_school/Winter_2017/Stats 601/Project/df.loc.RDS")
+# get lonlat
+all.lon.lat <- geocode(as.character(df.fatal$city.state), source = 'dsk')
+df.location <- cbind(df.fatal, all.lon.lat)
+saveRDS(df.location, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.location.RDS")
+
+saveRDS(df.loc, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS") # save df.loc because it takes forever to pull data from google
+df.loc <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS")
 df.loc <- cbind(df.loc, unique(df.fatal, df.fatal$state))
+
+# Use this data for df.fatal
+df.fatal <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.location.RDS")
+df.fatal <- na.omit(df.fatal)
 
 US <- map_data("state") # get US map data, white map
 
@@ -110,7 +119,7 @@ pam_fit2 <- pam(gower_dist, diss = TRUE, k = 2)
 pam_fit7 <- pam(gower_dist, diss = TRUE, k = 7)
 
 pam_results <- df.fatal.clean %>% dplyr::select(-id) %>%
-  mutate(cluster = pam_fit7$clustering) %>%
+  mutate(cluster = pam_fit2$clustering) %>%
   group_by(cluster) %>%
   do(the_summary = summary(.))
 
@@ -130,9 +139,11 @@ tsne_data <- tsne_obj$Y %>%
 
 # too many variables of interest, but still good to look at for us
 tsne_data <-  data.frame(cluster = factor(pam_fit2$clustering), df.fatal.clean, tsne_data)
-ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=flee))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color = cluster))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=threat_level))
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=manner_of_death))
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=signs_of_mental_illness))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=body_camera))
 
 
 tsne_data <-  data.frame(cluster = factor(pam_fit7$clustering), df.fatal.clean, tsne_data)
