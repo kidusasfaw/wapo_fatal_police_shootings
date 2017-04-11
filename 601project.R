@@ -7,34 +7,14 @@ library(plyr)
 library(dplyr)
 library(tidyr)
 
-df.all <- read.table("~/Documents/Data/601/Project/gvdb-aggregated-db/Events.tsv",
-                     sep="\t", header=TRUE, fill=TRUE)
-
-mystring <- read_file("~/Documents/Data/601/Project/gvdb-aggregated-db/Events.tsv")
-# json
-check <- fromJSON(mystring)
-
 df.fatal <- read.csv("~/Documents/Data/601/Project/data-police-shootings-master/fatal-police-shootings-data.csv")
 
-# get lonlat data and frequency
+# get lonlat data and frequency for map
 df.fatal <- unite(data=df.fatal, city.state, c(city, state), sep = " ", remove = FALSE) # create variable city.state for better accuracy
 df.loc <- as.data.frame(table(df.fatal$city.state)) # get freq
 names(df.loc)[1] <- 'city.state'
 lonlat <- geocode(as.character(df.loc$city.state), source = 'dsk') # get latitude and longitude
 df.loc <- na.omit(cbind(df.loc, lonlat)) # remove NA
-
-# get lonlat
-all.lon.lat <- geocode(as.character(df.fatal$city.state), source = 'dsk')
-df.location <- cbind(df.fatal, all.lon.lat)
-saveRDS(df.location, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.location.RDS")
-
-saveRDS(df.loc, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS") # save df.loc because it takes forever to pull data from google
-df.loc <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS")
-df.loc <- cbind(df.loc, unique(df.fatal, df.fatal$state))
-
-# Use this data for df.fatal
-df.fatal <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.location.RDS")
-df.fatal <- na.omit(df.fatal)
 
 US <- map_data("state") # get US map data, white map
 
@@ -44,7 +24,7 @@ hawaii <- df.loc[grepl("HI$",df.loc$city.state),]
 alaska <- df.loc[grepl("AK$",df.loc$city.state),]
 
 
-# plot using US
+# plot using white US
 ggplot(data=US, aes(x=long, y=lat, group=group)) +
   geom_polygon(fill="white", colour="black") +
   xlim(-160, 60) + ylim(25,75) +
@@ -73,6 +53,19 @@ ggmap(map, legend = "none") +
   theme(axis.title=element_blank(),
         axis.text=element_blank(),
         axis.ticks=element_blank())
+
+# get lonlat
+all.lon.lat <- geocode(as.character(df.fatal$city.state), source = 'dsk')
+df.location <- cbind(df.fatal, all.lon.lat)
+saveRDS(df.location, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.location.RDS")
+
+saveRDS(df.loc, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS") # save df.loc because it takes forever to pull data from google
+df.loc <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS")
+df.loc <- cbind(df.loc, unique(df.fatal, df.fatal$state))
+
+# Use this data for df.fatal
+df.fatal <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.location.RDS")
+df.fatal <- na.omit(df.fatal)
 
 
 # create distance matrix for visualization, use Gower distance
@@ -116,7 +109,7 @@ lines(1:10, sil_width)
 
 # looks like K = 2, but lets also check K=7
 pam_fit2 <- pam(gower_dist, diss = TRUE, k = 2)
-pam_fit7 <- pam(gower_dist, diss = TRUE, k = 7)
+pam_fit6 <- pam(gower_dist, diss = TRUE, k = 6)
 
 pam_results <- df.fatal.clean %>% dplyr::select(-id) %>%
   mutate(cluster = pam_fit2$clustering) %>%
@@ -140,15 +133,25 @@ tsne_data <- tsne_obj$Y %>%
 # too many variables of interest, but still good to look at for us
 tsne_data <-  data.frame(cluster = factor(pam_fit2$clustering), df.fatal.clean, tsne_data)
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color = cluster))
-ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=threat_level))
-ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=manner_of_death))
-ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=signs_of_mental_illness))
-ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=body_camera))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=threat_level))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=manner_of_death))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=signs_of_mental_illness))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=body_camera))
 
 
 tsne_data <-  data.frame(cluster = factor(pam_fit7$clustering), df.fatal.clean, tsne_data)
-ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=race))
-ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(shape = cluster, color=threat_level))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=race))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=threat_level))
 
+# MDS
+
+fit <- cmdscale(gower_dist, k=2) # k is the number of dim
+fit # view results
+
+# plot solution 
+fit <- as.data.frame(fit)
+ggplot() + geom_point(data=fit, aes(fit[,1], fit[,2]))
+fit <- cbind(fit, df.fatal)
+ggplot() + geom_point(data=fit, aes(x=V1, y=V2, color=race))
 
 
