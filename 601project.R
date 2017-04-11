@@ -15,16 +15,11 @@ df.loc <- as.data.frame(table(df.fatal$city.state)) # get freq
 names(df.loc)[1] <- 'city.state'
 lonlat <- geocode(as.character(df.loc$city.state), source = 'dsk') # get latitude and longitude
 df.loc <- na.omit(cbind(df.loc, lonlat)) # remove NA
-
-US <- map_data("state") # get US map data, white map
-
-# devtools::install_github("hadley/ggplot2@v2.2.0") need old version for google maps
-df.loc$city.state <- as.character(df.loc$city.state)
-hawaii <- df.loc[grepl("HI$",df.loc$city.state),]
-alaska <- df.loc[grepl("AK$",df.loc$city.state),]
-
+saveRDS(df.loc, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS") # save df.loc if use google maps
+# df.loc <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS") to load
 
 # plot using white US
+US <- map_data("state") # get US map data, white map
 ggplot(data=US, aes(x=long, y=lat, group=group)) +
   geom_polygon(fill="white", colour="black") +
   xlim(-160, 60) + ylim(25,75) +
@@ -32,6 +27,14 @@ ggplot(data=US, aes(x=long, y=lat, group=group)) +
   coord_cartesian(xlim = c(-130, -50), ylim=c(20,55)) 
 
 # plot using google map 
+# devtools::install_github("hadley/ggplot2@v2.2.0") need old version of ggplot2 for google maps
+df.loc$city.state <- as.character(df.loc$city.state)
+
+# separate noncontiguous states
+df.loc$city.state <- as.character(df.loc$city.state) # change city.state to character to use grep
+hawaii <- df.loc[grepl("HI$",df.loc$city.state),]
+alaska <- df.loc[grepl("AK$",df.loc$city.state),]
+
 # US
 map <- get_map(location=c(lon = -98.35, lat = 39.70), zoom = 4, source="google",maptype="roadmap",crop=FALSE)
 ggmap(map, legend = "none") + 
@@ -46,7 +49,7 @@ ggmap(map, legend = "none") +
   theme(axis.title=element_blank(),
         axis.text=element_blank(),
         axis.ticks=element_blank())
-#Hawaii
+# Hawaii
 map <- get_map(location = "hawaii", zoom = 7)
 ggmap(map, legend = "none") + 
   geom_point(aes(x = lon, y = lat, size=Freq), data = hawaii, alpha = .7, color = "darkblue") +
@@ -54,25 +57,27 @@ ggmap(map, legend = "none") +
         axis.text=element_blank(),
         axis.ticks=element_blank())
 
-# get lonlat
-all.lon.lat <- geocode(as.character(df.fatal$city.state), source = 'dsk')
-df.location <- cbind(df.fatal, all.lon.lat)
-saveRDS(df.location, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.location.RDS")
+# Clusterting
 
-saveRDS(df.loc, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS") # save df.loc because it takes forever to pull data from google
-df.loc <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS")
-df.loc <- cbind(df.loc, unique(df.fatal, df.fatal$state))
+# create df with lat and lon
+lonlat <- geocode(as.character(df.fatal$city.state), source = 'dsk')
+df.location <- cbind(df.fatal, latlon)
+saveRDS(df.location, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.location.RDS")
 
 # Use this data for df.fatal
 df.fatal <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.location.RDS")
-df.fatal <- na.omit(df.fatal)
-
-
-# create distance matrix for visualization, use Gower distance
-# https://www.r-bloggers.com/clustering-mixed-data-types-in-r/
 df.na <- df.fatal[rowSums(is.na(df.fatal)) > 0,] # see rows with missing values
+df.fatal <- na.omit(df.fatal) # few NA, so just won't use
 
-drop <- c('name', 'date', 'city.state', 'city', 'state')
+# create new variable minorty, 0 = white, 1 = black, 2 = other
+df.fatal$minority <- rep(0, nrow(df.fatal))
+df.fatal$minority[df.fatal$race =='B'] <- 1
+df.fatal$minority[df.fatal$race !='B' & df.fatal$race != 'W'] <- 2
+df.fatal$minority <- factor(df.fatal$minority)
+
+# create distance matrix for visualization, use Gower distance since mostly categorical data
+# https://www.r-bloggers.com/clustering-mixed-data-types-in-r/ 
+drop <- c('name', 'date', 'city.state', 'city', 'state', 'race') 
 df.fatal.clean <- df.fatal[ , !(names(df.fatal) %in% drop)]
 
 gower_dist <- daisy(df.fatal.clean[, -1],
@@ -89,7 +94,6 @@ df.fatal.clean[which(gower_mat == min(gower_mat[gower_mat != min(gower_mat)]),
 df.fatal.clean[which(gower_mat == max(gower_mat[gower_mat != max(gower_mat)]),
         arr.ind = TRUE)[1, ], ]
 
-
 # Calculate silhouette width for many k using PAM
 sil_width <- c(NA)
 
@@ -101,18 +105,16 @@ for(i in 2:10){
 }
 
 # Plot sihouette width (higher is better)
-
 plot(1:10, sil_width,
      xlab = "Number of clusters",
      ylab = "Silhouette Width")
 lines(1:10, sil_width)
 
-# looks like K = 2, but lets also check K=7
-pam_fit2 <- pam(gower_dist, diss = TRUE, k = 2)
-pam_fit6 <- pam(gower_dist, diss = TRUE, k = 6)
+# looks like K = 2
+pam_fit <- pam(gower_dist, diss = TRUE, k = 2)
 
 pam_results <- df.fatal.clean %>% dplyr::select(-id) %>%
-  mutate(cluster = pam_fit2$clustering) %>%
+  mutate(cluster = pam_fit$clustering) %>%
   group_by(cluster) %>%
   do(the_summary = summary(.))
 
@@ -120,8 +122,7 @@ pam_results$the_summary
 # Looks to be clustered by threat level and race
 
 # Look at metoids
-df.fatal.clean[pam_fit2$medoids, ]
-df.fatal.clean[pam_fit7$medoids, ]
+df.fatal.clean[pam_fit$medoids, ]
 
 # plot, dimension reduction using tSNE, t-distributed stochastic neighborhood embedding
 tsne_obj <- Rtsne(gower_dist, is_distance = TRUE)
@@ -131,16 +132,13 @@ tsne_data <- tsne_obj$Y %>%
   setNames(c("X", "Y"))
 
 # too many variables of interest, but still good to look at for us
-tsne_data <-  data.frame(cluster = factor(pam_fit2$clustering), df.fatal.clean, tsne_data)
+tsne_data <-  data.frame(cluster = factor(pam_fit$clustering), df.fatal.clean, tsne_data)
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color = cluster))
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=threat_level))
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=manner_of_death))
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=signs_of_mental_illness))
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=body_camera))
-
-
-tsne_data <-  data.frame(cluster = factor(pam_fit7$clustering), df.fatal.clean, tsne_data)
-ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=race))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=minority))
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=threat_level))
 
 # MDS
@@ -152,6 +150,6 @@ fit # view results
 fit <- as.data.frame(fit)
 ggplot() + geom_point(data=fit, aes(fit[,1], fit[,2]))
 fit <- cbind(fit, df.fatal)
-ggplot() + geom_point(data=fit, aes(x=V1, y=V2, color=race))
+ggplot() + geom_point(data=fit, aes(x=V1, y=V2, color=minority))
 
 
