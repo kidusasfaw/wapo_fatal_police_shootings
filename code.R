@@ -11,7 +11,7 @@ library(tidyr)
 
 #### Laura
 
-df.fatal <- read.csv("~/Documents/Data/601/Project/data-police-shootings-master/fatal-police-shootings-data.csv")
+df.fatal <- read.csv("~/filepath/fatal-police-shootings-data.csv")
 
 ############### Plot Maps
 
@@ -21,7 +21,7 @@ df.loc <- as.data.frame(table(df.fatal$city.state)) # get freq
 names(df.loc)[1] <- 'city.state'
 lonlat <- geocode(as.character(df.loc$city.state), source = 'dsk') # get latitude and longitude
 df.loc <- na.omit(cbind(df.loc, lonlat)) # remove NA
-saveRDS(df.loc, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS") # save df.loc if use google maps
+saveRDS(df.loc, "~/filepath/df.loc.RDS") # save df.loc if use google maps
 # df.loc <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS") to load
 
 # Plot using white US map
@@ -68,10 +68,10 @@ ggmap(map, legend = "none") +
 # Create df with lat and lon
 lonlat <- geocode(as.character(df.fatal$city.state), source = 'dsk')
 df.location <- cbind(df.fatal, latlon)
-saveRDS(df.location, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.location.RDS")
+saveRDS(df.location, "~/filepath/df.location.RDS")
 
 # Use this data for df.fatal
-df.fatal <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.location.RDS")
+df.fatal <- readRDS("~/filepath/df.location.RDS")
 df.na <- df.fatal[rowSums(is.na(df.fatal)) > 0,] # see rows with missing values
 df.fatal <- na.omit(df.fatal) # few NA, so just won't use
 
