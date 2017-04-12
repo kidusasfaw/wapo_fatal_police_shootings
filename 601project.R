@@ -36,7 +36,7 @@ hawaii <- df.loc[grepl("HI$",df.loc$city.state),]
 alaska <- df.loc[grepl("AK$",df.loc$city.state),]
 
 # US
-map <- get_map(location=c(lon = -98.35, lat = 39.70), zoom = 4, source="google",maptype="roadmap",crop=FALSE)
+map <- get_map(location=c(lon = -96.35, lat = 39.70), zoom = 4, source="google",crop=TRUE)
 ggmap(map, legend = "none") + 
   geom_point(aes(x = lon, y = lat, size=Freq), data = df.loc, alpha = .7, color = "darkblue") +
   theme(axis.title=element_blank(),
@@ -70,26 +70,25 @@ df.na <- df.fatal[rowSums(is.na(df.fatal)) > 0,] # see rows with missing values
 df.fatal <- na.omit(df.fatal) # few NA, so just won't use
 
 # create new variable minorty, 0 = white, 1 = black, 2 = other
-df.fatal$minority <- rep(0, nrow(df.fatal))
-df.fatal$minority[df.fatal$race =='B'] <- 1
-df.fatal$minority[df.fatal$race !='B' & df.fatal$race != 'W'] <- 2
+df.fatal$minority <- 'white'
+df.fatal$minority[df.fatal$race =='B'] <- 'black'
+df.fatal$minority[df.fatal$race =='H'] <- 'hispanic'
+df.fatal$minority[df.fatal$race !='B' & df.fatal$race != 'W' & df.fatal$race != 'H'] <- 'other'
 df.fatal$minority <- factor(df.fatal$minority)
 
 # create distance matrix for visualization, use Gower distance since mostly categorical data
-# https://www.r-bloggers.com/clustering-mixed-data-types-in-r/ 
 drop <- c('name', 'date', 'city.state', 'city', 'state', 'race') 
 df.fatal.clean <- df.fatal[ , !(names(df.fatal) %in% drop)]
 
 gower_dist <- daisy(df.fatal.clean[, -1],
                     metric = "gower",
                     type = list(logratio = 3))
+
 # Sanity check
 gower_mat <- as.matrix(gower_dist)
-
 # Output most similar pair
 df.fatal.clean[which(gower_mat == min(gower_mat[gower_mat != min(gower_mat)]),
         arr.ind = TRUE)[1, ], ]
-
 # Output most dissimilar pair
 df.fatal.clean[which(gower_mat == max(gower_mat[gower_mat != max(gower_mat)]),
         arr.ind = TRUE)[1, ], ]
@@ -118,38 +117,40 @@ pam_results <- df.fatal.clean %>% dplyr::select(-id) %>%
   group_by(cluster) %>%
   do(the_summary = summary(.))
 
+# look at numerics of clusters
 pam_results$the_summary
 # Looks to be clustered by threat level and race
 
-# Look at metoids
+# Look at medoids
 df.fatal.clean[pam_fit$medoids, ]
 
-# plot, dimension reduction using tSNE, t-distributed stochastic neighborhood embedding
+# Dimension reduction using tSNE, t-distributed stochastic neighborhood embedding
 tsne_obj <- Rtsne(gower_dist, is_distance = TRUE)
 
 tsne_data <- tsne_obj$Y %>%
   data.frame() %>%
   setNames(c("X", "Y"))
 
-# too many variables of interest, but still good to look at for us
-tsne_data <-  data.frame(cluster = factor(pam_fit$clustering), df.fatal.clean, tsne_data)
+# Lets look at some variables in 2D to see if anything separates well
+tsne_data <-  data.frame(cluster = factor(pam_fit$clustering), df.fatal.clean, tsne_data, race=df.fatal$race)
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color = cluster))
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=threat_level))
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=manner_of_death))
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=signs_of_mental_illness))
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=body_camera))
 ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=minority))
-ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=threat_level))
+ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=race))
 
+# Can compare with MDS
 # MDS
-
 fit <- cmdscale(gower_dist, k=2) # k is the number of dim
 fit # view results
 
-# plot solution 
+# plot MDS without coloring groups  
 fit <- as.data.frame(fit)
 ggplot() + geom_point(data=fit, aes(fit[,1], fit[,2]))
-fit <- cbind(fit, df.fatal)
-ggplot() + geom_point(data=fit, aes(x=V1, y=V2, color=minority))
+# plot MDS, color by cluster
+fit <- cbind(fit, df.fatal, cluster = factor(pam_fit$clustering))
+ggplot() + geom_point(data=fit, aes(x=V1, y=V2, color=cluster))
 
 
