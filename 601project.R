@@ -7,9 +7,15 @@ library(plyr)
 library(dplyr)
 library(tidyr)
 
+### Kidus
+
+#### Laura
+
 df.fatal <- read.csv("~/Documents/Data/601/Project/data-police-shootings-master/fatal-police-shootings-data.csv")
 
-# get lonlat data and frequency for map
+############### Plot Maps
+
+# Get lonlat data and frequency for map
 df.fatal <- unite(data=df.fatal, city.state, c(city, state), sep = " ", remove = FALSE) # create variable city.state for better accuracy
 df.loc <- as.data.frame(table(df.fatal$city.state)) # get freq
 names(df.loc)[1] <- 'city.state'
@@ -18,7 +24,7 @@ df.loc <- na.omit(cbind(df.loc, lonlat)) # remove NA
 saveRDS(df.loc, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS") # save df.loc if use google maps
 # df.loc <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS") to load
 
-# plot using white US
+# Plot using white US map
 US <- map_data("state") # get US map data, white map
 ggplot(data=US, aes(x=long, y=lat, group=group)) +
   geom_polygon(fill="white", colour="black") +
@@ -26,11 +32,11 @@ ggplot(data=US, aes(x=long, y=lat, group=group)) +
   geom_point(data=df.loc, inherit.aes=F, aes(x=lon, y=lat, size=Freq), colour="blue",  alpha=.8) +
   coord_cartesian(xlim = c(-130, -50), ylim=c(20,55)) 
 
-# plot using google map 
+# Plot using google map 
 # devtools::install_github("hadley/ggplot2@v2.2.0") need old version of ggplot2 for google maps
 df.loc$city.state <- as.character(df.loc$city.state)
 
-# separate noncontiguous states
+# Separate noncontiguous states
 df.loc$city.state <- as.character(df.loc$city.state) # change city.state to character to use grep
 hawaii <- df.loc[grepl("HI$",df.loc$city.state),]
 alaska <- df.loc[grepl("AK$",df.loc$city.state),]
@@ -57,9 +63,9 @@ ggmap(map, legend = "none") +
         axis.text=element_blank(),
         axis.ticks=element_blank())
 
-# Clusterting
+############### Clusterting
 
-# create df with lat and lon
+# Create df with lat and lon
 lonlat <- geocode(as.character(df.fatal$city.state), source = 'dsk')
 df.location <- cbind(df.fatal, latlon)
 saveRDS(df.location, "~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.location.RDS")
@@ -69,14 +75,14 @@ df.fatal <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.lo
 df.na <- df.fatal[rowSums(is.na(df.fatal)) > 0,] # see rows with missing values
 df.fatal <- na.omit(df.fatal) # few NA, so just won't use
 
-# create new variable minorty, 0 = white, 1 = black, 2 = other
+# Create new variable minority
 df.fatal$minority <- 'white'
 df.fatal$minority[df.fatal$race =='B'] <- 'black'
 df.fatal$minority[df.fatal$race =='H'] <- 'hispanic'
 df.fatal$minority[df.fatal$race !='B' & df.fatal$race != 'W' & df.fatal$race != 'H'] <- 'other'
 df.fatal$minority <- factor(df.fatal$minority)
 
-# create distance matrix for visualization, use Gower distance since mostly categorical data
+# Create distance matrix for visualization, use Gower distance since mostly categorical data
 drop <- c('name', 'date', 'city.state', 'city', 'state', 'race') 
 df.fatal.clean <- df.fatal[ , !(names(df.fatal) %in% drop)]
 
@@ -109,7 +115,7 @@ plot(1:10, sil_width,
      ylab = "Silhouette Width")
 lines(1:10, sil_width)
 
-# looks like K = 2
+# Looks like K = 2 is best
 pam_fit <- pam(gower_dist, diss = TRUE, k = 2)
 
 pam_results <- df.fatal.clean %>% dplyr::select(-id) %>%
@@ -117,14 +123,15 @@ pam_results <- df.fatal.clean %>% dplyr::select(-id) %>%
   group_by(cluster) %>%
   do(the_summary = summary(.))
 
-# look at numerics of clusters
+# Look at numerics of clusters
 pam_results$the_summary
 # Looks to be clustered by threat level and race
 
 # Look at medoids
 df.fatal.clean[pam_fit$medoids, ]
 
-# Dimension reduction using tSNE, t-distributed stochastic neighborhood embedding
+############### Dimension reduction
+# tSNE, t-distributed stochastic neighborhood embedding
 tsne_obj <- Rtsne(gower_dist, is_distance = TRUE)
 
 tsne_data <- tsne_obj$Y %>%
@@ -146,11 +153,15 @@ ggplot(aes(x = X, y = Y), data = tsne_data) + geom_point(aes(color=race))
 fit <- cmdscale(gower_dist, k=2) # k is the number of dim
 fit # view results
 
-# plot MDS without coloring groups  
+# Plot MDS without coloring groups  
 fit <- as.data.frame(fit)
 ggplot() + geom_point(data=fit, aes(fit[,1], fit[,2]))
-# plot MDS, color by cluster
+# Plot MDS, color by cluster
 fit <- cbind(fit, df.fatal, cluster = factor(pam_fit$clustering))
 ggplot() + geom_point(data=fit, aes(x=V1, y=V2, color=cluster))
+
+### Zoe
+
+### Ed
 
 
