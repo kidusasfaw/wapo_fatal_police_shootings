@@ -21,10 +21,10 @@ df.loc <- as.data.frame(table(df.fatal$city.state)) # get freq
 names(df.loc)[1] <- 'city.state'
 lonlat <- geocode(as.character(df.loc$city.state), source = 'dsk') # get latitude and longitude
 df.loc <- na.omit(cbind(df.loc, lonlat)) # remove NA
-saveRDS(df.loc, "~/filepath/df.loc.RDS") # save df.loc if use google maps
-# df.loc <- readRDS("~/Documents/Grad_school/Winter_2017/Stats_601/Project/df.loc.RDS") to load
+saveRDS(df.loc, "~/filepath/df.loc.RDS") # save df.loc if use google maps since it takes so long
+# df.loc <- readRDS("~/filepath/df.loc.RDS") to load
 
-# Plot using white US map
+# Plot using white US map without Alaska or Hawaii
 US <- map_data("state") # get US map data, white map
 ggplot(data=US, aes(x=long, y=lat, group=group)) +
   geom_polygon(fill="white", colour="black") +
@@ -33,7 +33,7 @@ ggplot(data=US, aes(x=long, y=lat, group=group)) +
   coord_cartesian(xlim = c(-130, -50), ylim=c(20,55)) 
 
 # Plot using google map 
-# devtools::install_github("hadley/ggplot2@v2.2.0") need old version of ggplot2 for google maps
+# devtools::install_github("hadley/ggplot2@v2.2.0") need old version of ggplot2 to use google maps
 df.loc$city.state <- as.character(df.loc$city.state)
 
 # Separate noncontiguous states
@@ -41,7 +41,7 @@ df.loc$city.state <- as.character(df.loc$city.state) # change city.state to char
 hawaii <- df.loc[grepl("HI$",df.loc$city.state),]
 alaska <- df.loc[grepl("AK$",df.loc$city.state),]
 
-# US
+# US contiguous
 map <- get_map(location=c(lon = -96.35, lat = 39.70), zoom = 4, source="google",crop=TRUE)
 ggmap(map, legend = "none") + 
   geom_point(aes(x = lon, y = lat, size=Freq), data = df.loc, alpha = .7, color = "darkblue") +
@@ -68,12 +68,12 @@ ggmap(map, legend = "none") +
 # Create df with lat and lon
 lonlat <- geocode(as.character(df.fatal$city.state), source = 'dsk')
 df.location <- cbind(df.fatal, latlon)
-saveRDS(df.location, "~/filepath/df.location.RDS")
+saveRDS(df.location, "~/filepath/df.location.RDS") 
 
 # Use this data for df.fatal
 df.fatal <- readRDS("~/filepath/df.location.RDS")
 df.na <- df.fatal[rowSums(is.na(df.fatal)) > 0,] # see rows with missing values
-df.fatal <- na.omit(df.fatal) # few NA, so just won't use
+df.fatal <- na.omit(df.fatal) # few NA, so just won't use them
 
 # Create new variable minority
 df.fatal$minority <- 'white'
@@ -86,11 +86,9 @@ df.fatal$minority <- factor(df.fatal$minority)
 drop <- c('name', 'date', 'city.state', 'city', 'state', 'race') 
 df.fatal.clean <- df.fatal[ , !(names(df.fatal) %in% drop)]
 
-gower_dist <- daisy(df.fatal.clean[, -1],
-                    metric = "gower",
-                    type = list(logratio = 3))
+gower_dist <- daisy(df.fatal.clean[, -1], metric = "gower")
 
-# Sanity check
+# Check Gower dist works
 gower_mat <- as.matrix(gower_dist)
 # Output most similar pair
 df.fatal.clean[which(gower_mat == min(gower_mat[gower_mat != min(gower_mat)]),
@@ -125,7 +123,7 @@ pam_results <- df.fatal.clean %>% dplyr::select(-id) %>%
 
 # Look at numerics of clusters
 pam_results$the_summary
-# Looks to be clustered by threat level and race
+# Looks to be clustered by threat level, race, and armed
 
 # Look at medoids
 df.fatal.clean[pam_fit$medoids, ]
