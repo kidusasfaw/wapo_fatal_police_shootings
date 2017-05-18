@@ -161,5 +161,232 @@ ggplot() + geom_point(data=fit, aes(x=V1, y=V2, color=cluster))
 ### Zoe
 
 ### Ed
+ps.data = readRDS(file.choose())
+set.seed(414)
+library(randomForest)
+
+###################### Functions ############################
+
+# Loss Function
+loss = function(y, f.hat, c){
+  a = sum(y == "True" & f.hat == "False")
+  b = sum(y == "False" & f.hat == "True")
+  
+  out = a*c + b
+  return(out)
+}
+
+# Performs the Random Forest. Returns the confusion matrix, 
+# the class error rates, and the value of the loss function
+rf = function(X.train, Y.train, X.test, Y.test, thres, c = 9) {
+  rf = randomForest(X.train, Y.train)
+  pred.rf = predict(rf, X.test, type = "prob")
+  t.num = which(colnames(pred.rf) == "True")
+  pred.table = unname(ifelse(pred.rf[,t.num] > thres, "True", "False"))
+  pred.table = cbind(pred.table,as.character(Y.test))
+  
+  out = table(pred.table[,1],pred.table[,2])
+  false.err = 1-sum(pred.table[,1] == "False" & pred.table[,2] == "False")/sum(pred.table[,2] == "False")
+  true.err = 1-sum(pred.table[,1] == "True" & pred.table[,2] == "True")/sum(pred.table[,2] == "True")
+  
+  loss = loss(y = Y.test, f.hat = pred.table[,1], c)
+  
+  return(list(out,false.err,true.err,loss))
+}
+
+# Creates k folds. Used for the CV function
+folds = function(n, k){
+  size = round(n/k)
+  out = list()
+  start = 0
+  indices = sample(1:n,n,replace = FALSE)
+  for(i in 1:k) {
+    if(i < k) out[[i]] = indices[(start+1):(start+size)]
+    else out[[i]] = indices[(start+1):n]
+    start = start+size
+  }
+  return(out)
+}
+
+# Up Sample the minority class
+up = function(X.train, Y.train){
+  bcam.t = which(Y.train == "True")
+  bcam.f = which(Y.train == "False")
+  
+  up.t = sample(bcam.t,length(bcam.f),replace = TRUE)
+  up.f = sample(bcam.f,length(bcam.f),replace = FALSE)
+  Y.up = Y.train[c(up.t,up.f)]
+  X.up = X.train[c(up.t,up.f),]
+  
+  return(list(X.up,Y.up))
+}
+
+# Down Sample the majority class
+down = function(X.train, Y.train){
+  bcam.t = which(Y.train == "True")
+  bcam.f = which(Y.train == "False")
+  
+  down.t = sample(bcam.t,length(bcam.t),replace = FALSE)
+  down.f = sample(bcam.f,length(bcam.t),replace = FALSE)
+  Y.down = Y.train[c(down.t,down.f)]
+  X.down = X.train[c(down.t,down.f),]
+  
+  return(list(X.down,Y.down))
+}
+
+# Perform k-fold cross validation r times. Returns the loss 
+# along with the error rate for the "true" class
+cv.rf = function(X, Y, thres, c = 9, k = 5, r = 1,
+                 sample = c("none","up","down")){
+  loss = 0
+  true.err = 0
+  for(j in 1:r) {
+    n = length(Y)
+    sets = folds(n, k)
+    for(i in 1:k) {
+      X.train = X[unlist(sets[-i]),]
+      Y.train = Y[unlist(sets[-i])]
+      X.test = X[sets[[i]],]
+      Y.test = Y[sets[[i]]]
+      
+      if(sample == "up") {
+        temp = up(X.train,Y.train)
+        X.train = temp[[1]]
+        Y.train = temp[[2]]
+      } 
+      if(sample == "down") {
+        temp = down(X.train,Y.train)
+        X.train = temp[[1]]
+        Y.train = temp[[2]]
+      }
+      
+      results = rf(X.train, Y.train, X.test, Y.test, thres, c)
+      loss = loss + results[[4]]
+      true.err = true.err + results[[3]]
+    }
+  }
+  return(list(loss/(k*r),(true.err)/(k*r)))
+}
+
+###################### Data Cleaning ##############################
+Y = as.factor(ps.data$body_camera)
+X = as.data.frame(ps.data[,c(4:14,16,17)])
+
+Y = Y[-c(1935,2050)]
+X = X[-c(1935,2050),]
+
+# omit missing data
+Y = Y[complete.cases(X)]
+X = X[complete.cases(X),]
+
+# subset "Armed"
+X$armed = as.character(X$armed)
+gun = grep("gun", X$armed)
+X$armed[gun] = "gun"
+other = which(X$armed != "gun" & 
+                X$armed != "unarmed" & 
+                X$armed != "undetermined" &
+                X$armed != "knife" &
+                X$armed != "vehicle" &
+                X$armed != "toy weapon")
+X$armed[other] = "other"
+X$armed = as.factor(X$armed)
+
+# remove city/state variables
+X = X[-c(6:8)]
+
+# create a training/test set
+testset = function(X, Y, size = 500) {
+  draws = sample(0:length(Y),length(Y),replace = FALSE)
+  test = draws[1:size]
+  train = draws[(size+1):length(Y)]
+  
+  Y.test = Y[test]
+  X.test = X[test,]
+  Y.train = Y[train]
+  X.train = X[train,]
+  return(list(X.train,Y.train,X.test,Y.test))
+}
+
+test = testset(X, Y, 500)
+X.train = test[[1]]
+Y.train = test[[2]]
+X.test = test[[3]]
+Y.test = test[[4]]
+
+#################### Data Analysis ############################
+
+rf.train = randomForest(X.train,Y.train)
+
+# construct the oversampled training set
+bcam.t = which(Y.train == "True")
+bcam.f = which(Y.train == "False")
+
+up.t = sample(bcam.t,length(bcam.f),replace = TRUE)
+up.f = sample(bcam.f,length(bcam.f),replace = FALSE)
+Y.up = Y.train[c(up.t,up.f)]
+X.up = X.train[c(up.t,up.f),]
+
+# fit random forest and calculate cv error
+rf.up = randomForest(X.up,Y.up)
+cv.rf(X.train,Y.train,.5,sample = "up")
+
+# same as above for undersampled training set
+down.t = sample(bcam.t,length(bcam.t),replace = FALSE)
+down.f = sample(bcam.f,length(bcam.t),replace = FALSE)
+Y.down = Y.train[c(down.t,down.f)]
+X.down = X.train[c(down.t,down.f),]
+
+rf.down = randomForest(X.down,Y.down)
+cv.rf(X.train,Y.train,.5,sample = "down")
+
+# For regular training set, search for optimal k
+thresholds = c(0.001, 0.01, 0.1, .25, .5)
+
+for(x in thresholds){
+  print(c(x,cv.rf(X.train,Y.train,x, r = 5, c = 9, sample = "none")[[1]]))
+}
+
+thresholds = 0.1+0.01*(0:10)
+
+for(x in thresholds){
+  print(c(x,cv.rf(X.train,Y.train,x, r = 5, c = 9, sample = "none")[[1]]))
+}
+
+rf(X.train,Y.train,X.test,Y.test,.10)
+rf(X.train,Y.train,X.train,Y.train,.1)
+
+# For oversampled training set, search for optimal k
+thresholds = c(0.001, 0.01, 0.1, .25, .5)
+
+for(x in thresholds){
+  print(c(x,cv.rf(X.train,Y.train,x, r = 5, c = 9,sample = "up")[[1]]))
+}
+
+thresholds = 0.1+0.01*(0:10)
+
+for(x in thresholds){
+  print(c(x,cv.rf(X.train,Y.train,x, r = 5, c = 9, sample = "up")[[1]]))
+}
+
+rf(X.up,Y.up,X.test,Y.test,.17)
+rf(X.up,Y.up,X.up,Y.up,.17)
+
+# For undersampled training set, search for optimal k
+thresholds = c(0.001, 0.01, 0.1, .25, .5)
+
+for(x in thresholds){
+  print(c(x,cv.rf(X.train,Y.train,x, r = 5, c = 9, sample = "down")[[1]]))
+}
+
+thresholds = 0.4+0.01*(0:10)
+
+for(x in thresholds){
+  print(c(x,cv.rf(X.train,Y.train,x, r = 5, c = 9, sample = "down")[[1]]))
+}
+
+rf(X.down,Y.down,X.test,Y.test,.5)
+rf(X.down,Y.down,X.down,Y.down,.5)
+
 
 
