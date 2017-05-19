@@ -1,3 +1,472 @@
+### Kidus
+library('plyr')
+library('ggplot2')
+library('e1071')
+library(data.table)
+library('nnet')
+library('mlbench')
+library('caret')
+
+# Create function which converts (0,0.5) to 0 and (0.5,1) to 1
+binary_decision <- function(vec){
+  return(ifelse(vec < 0.5, 0, 1))
+}
+
+# load in shared data with Laura, Zoe and Ed
+master_data = readRDS('~/Desktop/UM/COURSES/STAT601/project/df.location.RDS')
+
+# clean up the data per email by Laura
+master_data = master_data[complete.cases(master_data),]
+master_data = master_data[-which(master_data$id == 2304),]
+master_data = master_data[-which(master_data$id == 2158),]
+
+# create weapon converting function
+weapon_converter <- function(x){
+  if(x %in% c('gun', 'guns and explosives', 'gun and knife', 'hatchet and gun',
+              'machete and gun')) return(as.factor('gun'))
+  if(x %in% c('knife','pole and knife','sword','machete')) return(as.factor('knife'))
+  if(x %in% c('vehicle','motorcycle'))return(as.factor('vehicle'))
+  if(x %in% c('','undetermined')) return(as.factor('undetermined'))
+  if(x %in% c('toy weapon')) return(as.factor('toy weapon'))
+  if(x == 'unarmed') return(as.factor('unarmed'))
+  return(as.factor('other'))
+}
+
+# add weapon category column
+weapon_cat = sapply(master_data$armed, function(x) weapon_converter(x))
+master_data = cbind(master_data, weapon_cat)
+
+# create race converting function with bad name
+race_converter <- function(x){
+  if(x == 'B') return(as.factor('B'))
+  if(x == 'W') return(as.factor('W'))
+  return(as.factor('O'))
+}
+
+# add race category column
+race_cat = sapply(master_data$race, function(x) race_converter(x))
+master_data = cbind(master_data, race_cat)
+
+# adding region column
+region_converter <- function(x){
+  if(x == 'CT' | x == 'ME' | x == 'MA' | x == 'NH' | x == 'RI' |
+     x == 'VT' | x == 'NJ' | x == 'NY' | x == 'PA') return(as.factor(1))
+  if(x == 'IL' | x == 'IN' | x == 'MI' | x == 'OH' | x == 'WI' |
+     x == 'IA' | x == 'KS' | x == 'MN' | x == 'MO' | x == 'NE' |
+     x == 'SD' | x == 'ND') return(as.factor(2))
+  if(x == 'DE' | x == 'FL' | x == 'GA' | x == 'MD' | x == 'NC' |
+     x == 'SC' | x == 'VA' | x == 'DC' | x == 'WV' | x == 'AL' |
+     x == 'KY' | x == 'MS' | x == 'TN' | x == 'AR' | x == 'LA' |
+     x == 'OK' | x == 'TX') return(as.factor(3))
+  if(x == 'AZ' | x == 'CO' | x == 'ID' | x == 'MT' | x == 'NV' |
+     x == 'NM' | x == 'UT' | x == 'WY' | x == 'AK' | x == 'CA' |
+     x == 'HI' | x == 'OR' | x == 'WA') return(as.factor(4))
+}
+region_defn = c('Northeast','Midwest','South','West')
+region = sapply(master_data$state, function(x) region_converter(as.character(x)))
+master_data = cbind(master_data, region)
+
+# subset the data in  ways
+drops1 = c("state","city","city.state","name","id","region","race", "date","armed")
+fatal_data1 = master_data[,!(names(master_data) %in% drops1)]
+drops2 = c("state","city","city.state","name","id","race","region","date","manner_of_death","armed","gender","flee","body_camera","weapon_cat")
+fatal_data2 = master_data[,!(names(master_data) %in% drops2)]
+drops3 = c("state","city","city.state","name","id","lat","lon","race", "date","armed")
+fatal_data3 = master_data[,!(names(master_data) %in% drops3)]
+drops4 = c("state","city","city.state","name","id","race", "date","armed")
+fatal_data4 = master_data[,!(names(master_data) %in% drops4)]
+drops5 = c("state","city","city.state","name","id","race","region","date","manner_of_death","armed","flee","body_camera")
+fatal_data5 = master_data[,!(names(master_data) %in% drops5)]
+################ BASELINE #######################
+# split up our data into train and test set
+smp_size <- floor(0.75 * nrow(fatal_data1)) # 75% of the dataset
+# set the seed to make the partition reproducible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(fatal_data1)), size = smp_size)
+train <- fatal_data1[train_ind, ]
+test <- fatal_data1[-train_ind, ]
+Y.train <- train$race_cat
+Y.test <- test$race_cat
+X.train <- train[,-which(names(train)=='race_cat')]
+X.test <- test[,-which(names(test)=='race_cat')]
+# Train Gaussian SVM on full training set
+cost = 95
+gamma = 0.01
+g.svm <- svm(race_cat ~., data = train, 
+             type = 'C-classification', kernel = 'radial', 
+             cost = cost, gamma = gamma)
+g.svm.pred.train <- predict(g.svm,newdata = X.train)
+table(g.svm.pred.train, Y.train)
+print(sum(g.svm.pred.train == Y.train)/length(Y.train))
+# 0.6148194
+# Test Gaussian SVM on full test set
+g.svm.pred <- predict(g.svm,newdata = X.test)
+table(g.svm.pred, Y.test)
+print(sum(g.svm.pred == Y.test)/length(Y.test))
+# 0.6073394
+
+# POLY SVM
+# Polynomial kernel
+# Train Poly SVM on full training set
+cost = 10
+gamma = 0.01
+degree = 3
+coef0 = 2
+g.svm <- svm(race_cat ~., data = train, 
+             type = 'C-classification', kernel = 'polynomial', 
+             cost = cost, gamma = gamma, coef0 = coef0, degree=degree)
+g.svm.pred.train <- predict(g.svm,newdata = X.train)
+table(g.svm.pred.train, Y.train)
+print(sum(g.svm.pred.train == Y.train)/length(Y.train))
+# 0.6074709
+# Test Poly SVM on full test set
+g.svm.pred <- predict(g.svm,newdata = X.test)
+table(g.svm.pred, Y.test)
+print(sum(g.svm.pred == Y.test)/length(Y.test))
+# 0.5944954
+
+# Linear kernel
+# Train Gaussian SVM on full training set
+cost = 100
+g.svm <- svm(race_cat ~., data = train, 
+             type = 'C-classification', kernel = 'linear', 
+             cost = cost)
+g.svm.pred.train <- predict(g.svm,newdata = X.train)
+table(g.svm.pred.train, Y.train)
+print(sum(g.svm.pred.train == Y.train)/length(Y.train))
+# 0.5829761
+# Test Gaussian SVM on full test set
+g.svm.pred <- predict(g.svm,newdata = X.test)
+table(g.svm.pred, Y.test)
+print(sum(g.svm.pred == Y.test)/length(Y.test))
+#0.5944954
+
+# Train Multinomial Logistic Regression on full training set
+m.log.r <- multinom(race_cat~., data=train)
+m.log.r.pred.train <- predict(m.log.r,newdata = X.train)
+table(m.log.r.pred.train, Y.train)
+print(sum(m.log.r.pred.train == Y.train)/length(Y.train))
+# 0.5731782
+# Test Multinomial Logistic Regression on full test set
+m.log.r.pred <- predict(m.log.r, newdata = X.test)
+table(m.log.r.pred, Y.test)
+print(sum(m.log.r.pred == Y.test)/length(Y.test))
+# 0.5944954
+
+
+################ BY REGION ######################
+# REGION 1 - NORTHEAST
+reg.data <- fatal_data4[fatal_data4$region == 1,]
+# split up our data into train and test set
+smp_size <- floor(0.75 * nrow(reg.data)) # 75% of the dataset
+set.seed(123)
+train_ind <- sample(seq_len(nrow(reg.data)), size = smp_size)
+train.reg <- reg.data[train_ind,]
+test.reg <- reg.data[-train_ind,]
+Y.train <- train.reg$race_cat
+Y.test <- test.reg$race_cat
+X.train <- train.reg[,-which(names(train.reg)=='race_cat')]
+X.test <- test.reg[,-which(names(test.reg)=='race_cat')]
+# Train Gaussian SVM on region
+cost = 250
+gamma = 0.01
+g.svm <- svm(race_cat ~. -region, data = train.reg, 
+             type = 'C-classification', kernel = 'radial', 
+             cost = cost, gamma = gamma)
+g.svm.pred.train <- predict(g.svm,newdata = X.train)
+table(g.svm.pred.train, Y.train)
+print(sum(g.svm.pred.train == Y.train)/length(Y.train))
+# 0.7235772
+# Test Gaussian SVM on region
+g.svm.pred <- predict(g.svm,newdata = X.test)
+table(g.svm.pred, Y.test)
+print(sum(g.svm.pred == Y.test)/length(Y.test))
+# 0.5609756
+#########################################################
+# REGION 2 - MIDWEST
+reg.data <- fatal_data4[fatal_data4$region == 2,]
+# split up our data into train and test set
+smp_size <- floor(0.75 * nrow(reg.data)) # 75% of the dataset
+set.seed(123)
+train_ind <- sample(seq_len(nrow(reg.data)), size = smp_size)
+train.reg <- reg.data[train_ind,]
+test.reg <- reg.data[-train_ind,]
+Y.train <- train.reg$race_cat
+Y.test <- test.reg$race_cat
+X.train <- train.reg[,-which(names(train.reg)=='race_cat')]
+X.test <- test.reg[,-which(names(test.reg)=='race_cat')]
+# Train Gaussian SVM on region
+cost = 220
+gamma = 0.1
+g.svm <- svm(race_cat ~. -region, data = train.reg, 
+             type = 'C-classification', kernel = 'radial', 
+             cost = cost, gamma = gamma)
+g.svm.pred.train <- predict(g.svm,newdata = X.train)
+table(g.svm.pred.train, Y.train)
+print(sum(g.svm.pred.train == Y.train)/length(Y.train))
+# 0.9409594
+# Test Gaussian SVM on region
+g.svm.pred <- predict(g.svm,newdata = X.test)
+table(g.svm.pred, Y.test)
+print(sum(g.svm.pred == Y.test)/length(Y.test))
+# 0.6263736
+################################################
+# REGION 3 - SOUTH
+reg.data <- fatal_data4[fatal_data4$region == 3,]
+# split up our data into train and test set
+smp_size <- floor(0.75 * nrow(reg.data)) # 75% of the dataset
+set.seed(123)
+train_ind <- sample(seq_len(nrow(reg.data)), size = smp_size)
+train.reg <- reg.data[train_ind,]
+test.reg <- reg.data[-train_ind,]
+Y.train <- train.reg$race_cat
+Y.test <- test.reg$race_cat
+X.train <- train.reg[,-which(names(train.reg)=='race_cat')]
+X.test <- test.reg[,-which(names(test.reg)=='race_cat')]
+# Train Gaussian SVM on region
+cost = 240
+gamma = 0.05
+g.svm <- svm(race_cat ~. -region, data = train.reg, 
+             type = 'C-classification', kernel = 'radial', 
+             cost = cost, gamma = gamma)
+g.svm.pred.train <- predict(g.svm,newdata = X.train)
+table(g.svm.pred.train, Y.train)
+print(sum(g.svm.pred.train == Y.train)/length(Y.train))
+# 0.8308605
+# Test Gaussian SVM on region
+g.svm.pred <- predict(g.svm,newdata = X.test)
+table(g.svm.pred, Y.test)
+print(sum(g.svm.pred == Y.test)/length(Y.test))
+# 0.5911111
+#########################################################
+# REGION 4 - WEST
+reg.data <- fatal_data4[fatal_data4$region == 4,]
+# split up our data into train and test set
+smp_size <- floor(0.75 * nrow(reg.data)) # 75% of the dataset
+set.seed(123)
+train_ind <- sample(seq_len(nrow(reg.data)), size = smp_size)
+train.reg <- reg.data[train_ind,]
+test.reg <- reg.data[-train_ind,]
+Y.train <- train.reg$race_cat
+Y.test <- test.reg$race_cat
+X.train <- train.reg[,-which(names(train.reg)=='race_cat')]
+X.test <- test.reg[,-which(names(test.reg)=='race_cat')]
+# Train Gaussian SVM on region
+cost = 240
+gamma = 0.05
+g.svm <- svm(race_cat ~. -region, data = train.reg, 
+             type = 'C-classification', kernel = 'radial', 
+             cost = cost, gamma = gamma)
+g.svm.pred.train <- predict(g.svm,newdata = X.train)
+table(g.svm.pred.train, Y.train)
+print(sum(g.svm.pred.train == Y.train)/length(Y.train))
+# 0.8120567
+# Test Gaussian SVM on region
+g.svm.pred <- predict(g.svm,newdata = X.test)
+table(g.svm.pred, Y.test)
+print(sum(g.svm.pred == Y.test)/length(Y.test))
+# 0.5291005
+
+################## FEATURE SELECTION ######################
+# set the seed to make the partition reproducible
+# EXCLUDE REGION FOR THIS PART
+smp_size <- floor(0.75 * nrow(fatal_data1)) # 75% of the dataset
+set.seed(123)
+train_ind <- sample(seq_len(nrow(fatal_data1)), size = smp_size)
+train <- fatal_data1[train_ind, ]
+test <- fatal_data1[-train_ind, ]
+Y.train <- train$race_cat
+X.train <- train[,-which(names(train)=='race_cat')]
+Y.test <- test$race_cat
+X.test <- test[,-which(names(test)=='race_cat')]
+# X.train <- train[,-which(names(train)=='race_cat'|names(train)=='signs_of_mental_illness'|names(train)=='threat_level')]
+blep <- function(x){
+  if(x == 'B') return(as.factor(1))
+  if(x == 'W') return(as.factor(2))
+  if(x == 'O') return(as.factor(3))
+}
+Y.train <- sapply(Y.train, blep)
+# define the control using a random forest selection function
+control <- rfeControl(functions=rfFuncs, method="cv", number=10)
+# run the RFE algorithm
+results <- rfe(X.train, Y.train, sizes=c(1:8), rfeControl=control)
+# summarize the results
+print(results)
+# list the chosen features
+predictors(results)
+# plot the results
+plot(results, type=c("g", "o"))
+
+# in light of the above let us only use lon, age, lat, mental illness, threat, gender, weapon_cat
+set.seed(123)
+train_ind <- sample(seq_len(nrow(fatal_data5)), size = smp_size)
+
+train <- fatal_data5[train_ind, ]
+test <- fatal_data5[-train_ind, ]
+Y.train <- train$race_cat
+Y.test <- test$race_cat
+X.train <- train[,-which(names(train)=='race_cat')]
+X.test <- test[,-which(names(test)=='race_cat')]
+# RFE TRAIN
+cost = 230
+gamma = 0.02
+g.svm <- svm(race_cat ~., data = train, 
+             type = 'C-classification', kernel = 'radial', 
+             cost = cost, gamma = gamma)
+g.svm.pred.train <- predict(g.svm,newdata = X.train)
+table(g.svm.pred.train, Y.train)
+print(sum(g.svm.pred.train == Y.train)/length(Y.train))
+# 0.6252296
+# RFE TEST
+g.svm.pred <- predict(g.svm,newdata = X.test)
+table(g.svm.pred, Y.test)
+print(sum(g.svm.pred == Y.test)/length(Y.test))
+# 0.6018349
+
+######################## LAT - LONG INTERACTION TERM ###############
+set.seed(123)
+train_ind <- sample(seq_len(nrow(fatal_data5)), size = smp_size)
+
+train <- fatal_data5[train_ind, ]
+test <- fatal_data5[-train_ind, ]
+Y.train <- train$race_cat
+Y.test <- test$race_cat
+X.train <- train[,-which(names(train)=='race_cat')]
+X.test <- test[,-which(names(test)=='race_cat')]
+# RFE TRAIN
+cost = 230
+gamma = 0.02
+g.svm <- svm(race_cat ~. + lat*lon, data = train, 
+             type = 'C-classification', kernel = 'radial', 
+             cost = cost, gamma = gamma)
+g.svm.pred.train <- predict(g.svm,newdata = X.train)
+table(g.svm.pred.train, Y.train)
+print(sum(g.svm.pred.train == Y.train)/length(Y.train))
+# 0.679078
+# RFE TEST
+g.svm.pred <- predict(g.svm,newdata = X.test)
+table(g.svm.pred, Y.test)
+print(sum(g.svm.pred == Y.test)/length(Y.test))
+# 0.5731103
+
+################### COMBINE RFE WITH REGION STRATIFICATION ###############
+to_drop <- c("manner_of_death","flee","body_camera")
+all.reg.data <- fatal_data4[,!(names(fatal_data4) %in% to_drop)]
+# REGION 1 - NORTHEAST
+reg.data <- all.reg.data[all.reg.data$region == 1,]
+# split up our data into train and test set
+smp_size <- floor(0.75 * nrow(reg.data)) # 75% of the dataset
+set.seed(123)
+train_ind <- sample(seq_len(nrow(reg.data)), size = smp_size)
+train.reg <- reg.data[train_ind,]
+test.reg <- reg.data[-train_ind,]
+Y.train <- train.reg$race_cat
+Y.test <- test.reg$race_cat
+X.train <- train.reg[,-which(names(train.reg)=='race_cat')]
+X.test <- test.reg[,-which(names(test.reg)=='race_cat')]
+# Train Gaussian SVM on region
+cost = 250
+gamma = 0.01
+g.svm <- svm(race_cat ~ . -region, data = train.reg, 
+             type = 'C-classification', kernel = 'radial', 
+             cost = cost, gamma = gamma)
+g.svm.pred.train <- predict(g.svm,newdata = X.train)
+table(g.svm.pred.train, Y.train)
+print(sum(g.svm.pred.train == Y.train)/length(Y.train))
+# 0.7235772
+# Test Gaussian SVM on region
+g.svm.pred <- predict(g.svm,newdata = X.test)
+table(g.svm.pred, Y.test)
+print(sum(g.svm.pred == Y.test)/length(Y.test))
+# 0.6097561
+#########################################################
+# REGION 2 - MIDWEST
+reg.data <- all.reg.data[all.reg.data$region == 2,]
+# split up our data into train and test set
+smp_size <- floor(0.75 * nrow(reg.data)) # 75% of the dataset
+set.seed(123)
+train_ind <- sample(seq_len(nrow(reg.data)), size = smp_size)
+train.reg <- reg.data[train_ind,]
+test.reg <- reg.data[-train_ind,]
+Y.train <- train.reg$race_cat
+Y.test <- test.reg$race_cat
+X.train <- train.reg[,-which(names(train.reg)=='race_cat')]
+X.test <- test.reg[,-which(names(test.reg)=='race_cat')]
+# Train Gaussian SVM on region
+cost = 220
+gamma = 0.1
+g.svm <- svm(race_cat ~ . -region, data = train.reg, 
+             type = 'C-classification', kernel = 'radial', 
+             cost = cost, gamma = gamma)
+g.svm.pred.train <- predict(g.svm,newdata = X.train)
+table(g.svm.pred.train, Y.train)
+print(sum(g.svm.pred.train == Y.train)/length(Y.train))
+# 0.8819188
+# Test Gaussian SVM on region
+g.svm.pred <- predict(g.svm,newdata = X.test)
+table(g.svm.pred, Y.test)
+print(sum(g.svm.pred == Y.test)/length(Y.test))
+# 0.5384615
+#########################################################
+# REGION 3 - SOUTH
+reg.data <- all.reg.data[all.reg.data$region == 3,]
+# split up our data into train and test set
+smp_size <- floor(0.75 * nrow(reg.data)) # 75% of the dataset
+set.seed(123)
+train_ind <- sample(seq_len(nrow(reg.data)), size = smp_size)
+train.reg <- reg.data[train_ind,]
+test.reg <- reg.data[-train_ind,]
+Y.train <- train.reg$race_cat
+Y.test <- test.reg$race_cat
+X.train <- train.reg[,-which(names(train.reg)=='race_cat')]
+X.test <- test.reg[,-which(names(test.reg)=='race_cat')]
+# Train Gaussian SVM on region
+cost = 240
+gamma = 0.05
+g.svm <- svm(race_cat ~ . -region, data = train.reg, 
+             type = 'C-classification', kernel = 'radial', 
+             cost = cost, gamma = gamma)
+g.svm.pred.train <- predict(g.svm,newdata = X.train)
+table(g.svm.pred.train, Y.train)
+print(sum(g.svm.pred.train == Y.train)/length(Y.train))
+# 0.764095
+# Test Gaussian SVM on region
+g.svm.pred <- predict(g.svm,newdata = X.test)
+table(g.svm.pred, Y.test)
+print(sum(g.svm.pred == Y.test)/length(Y.test))
+# 0.56
+#########################################################
+# REGION 4 - WEST
+reg.data <- all.reg.data[all.reg.data$region == 4,]
+# split up our data into train and test set
+smp_size <- floor(0.75 * nrow(reg.data)) # 75% of the dataset
+set.seed(123)
+train_ind <- sample(seq_len(nrow(reg.data)), size = smp_size)
+train.reg <- reg.data[train_ind,]
+test.reg <- reg.data[-train_ind,]
+Y.train <- train.reg$race_cat
+Y.test <- test.reg$race_cat
+X.train <- train.reg[,-which(names(train.reg)=='race_cat')]
+X.test <- test.reg[,-which(names(test.reg)=='race_cat')]
+# Train Gaussian SVM on region
+cost = 240
+gamma = 0.05
+g.svm <- svm(race_cat ~ . -region, data = train.reg, 
+             type = 'C-classification', kernel = 'radial', 
+             cost = cost, gamma = gamma)
+g.svm.pred.train <- predict(g.svm,newdata = X.train)
+table(g.svm.pred.train, Y.train)
+print(sum(g.svm.pred.train == Y.train)/length(Y.train))
+# 0.7287234
+# Test Gaussian SVM on region
+g.svm.pred <- predict(g.svm,newdata = X.test)
+table(g.svm.pred, Y.test)
+print(sum(g.svm.pred == Y.test)/length(Y.test))
+# 0.5714286
+
+
+
+############################################################################################## Laura
 library(ggplot2)
 library(ggmap)
 library(maps)
@@ -5,11 +474,7 @@ library(cluster)
 library(Rtsne)
 library(plyr)
 library(dplyr)
-library(tidyr)
-
-### Kidus
-
-#### Laura
+library(tidyr)            
 
 df.fatal <- read.csv("~/filepath/fatal-police-shootings-data.csv")
 
@@ -158,9 +623,9 @@ ggplot() + geom_point(data=fit, aes(fit[,1], fit[,2]))
 fit <- cbind(fit, df.fatal, cluster = factor(pam_fit$clustering))
 ggplot() + geom_point(data=fit, aes(x=V1, y=V2, color=cluster))
 
-### Zoe
+############################################################################################## Zoe
 
-### Ed
+############################################################################################## Ed
 ps.data = readRDS(file.choose())
 set.seed(414)
 library(randomForest)
