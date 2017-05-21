@@ -624,6 +624,191 @@ fit <- cbind(fit, df.fatal, cluster = factor(pam_fit$clustering))
 ggplot() + geom_point(data=fit, aes(x=V1, y=V2, color=cluster))
 
 ############################################################################################## Zoe
+library(ggplot2)
+library(plot3D)
+library(cluster)
+
+file.dat <- read.csv(paste("/Users/zoerehnberg/Documents/UMich - First Year/STATS 601/",
+                          "final project/database.csv", sep = ""))
+
+# read in the data from Laura that includes longitude and latitude
+fat.dat <- readRDS("/Users/zoerehnberg/Documents/UMich - First Year/STATS 601/final project/df.location.RDS")
+
+# eliminate the rows with missing entries
+miss.dat <- fat.dat[rowSums(is.na(fat.dat)) == 0,]
+miss.dat <- miss.dat[miss.dat$id != c(2158),]
+miss.dat <- miss.dat[miss.dat$id != c(2304),]
+
+# discretize weapons
+weapon_converter <- function(x){
+  if(x %in% c('gun', 'guns and explosives', 'gun and knife', 'hatchet and gun',
+              'machete and gun')) return(as.factor('gun'))
+  if(x %in% c('knife','pole and knife','sword','machete')) return(as.factor('knife'))
+  if(x %in% c('vehicle','motorcycle'))return(as.factor('vehicle'))
+  if(x %in% c('','undetermined')) return(as.factor('undetermined'))
+  if(x %in% c('toy weapon')) return(as.factor('toy weapon'))
+  if(x == 'unarmed') return(as.factor('unarmed'))
+  return(as.factor('other'))
+}
+weap.dat <- sapply(miss.dat$armed, weapon_converter)
+
+use.dat <- miss.dat[,-c(1:3,9:11)]
+use.dat[,2] <- weap.dat
+
+#########################################################
+### TRY CLASSICAL MDS -- GET DISTANCES BETWEEN PEOPLE
+
+# Gower distance
+# Euclidean distance doesn't make sense for categorical data
+gower.dist <- daisy(use.dat, metric = "gower")
+
+# try three dimensions
+gower.mds3 <- cmdscale(gower.dist, k = 3, eig = TRUE)
+gmds.res3 <- data.frame(gower.mds3$points)
+scatter3D(x = gmds.res3$X1, y = gmds.res3$X2, z = gmds.res3$X3, colvar = as.numeric(use.dat$race),
+          axis.ticks = T, ticktype = "detailed",pch = 19, cex = 0.5, bty = "g", theta = 85, phi = 15)
+
+# try two dimensions
+gower.mds <- cmdscale(gower.dist, k = 2, eig = TRUE)
+gmds.res <- data.frame(gower.mds$points)
+
+# plain MDS plot
+ggplot(data = gmds.res, aes(x = X1, y = X2)) + geom_point(cex = 0.5) + labs(title = "Classical MDS")
+
+# colored by mental illness
+ggplot(data = gmds.res, aes(x = X1, y = X2)) +
+  geom_point(aes(color = use.dat$signs_of_mental_illness), cex = 0.5) +
+  labs(title = "Classical MDS: Mental Illness", color = "Mental Illness") +
+  guides(colour = guide_legend(override.aes = list(size=2)))
+
+# colored by threat level
+ggplot(data = gmds.res, aes(x = X1, y = X2)) +
+  geom_point(aes(color = use.dat$threat_level), cex = 0.5) +
+  scale_color_hue(labels = c("Attack", "Other","Undet.")) + 
+  labs(title = "Classical MDS: Threat Level", color = "Threat Level") +
+  guides(colour = guide_legend(override.aes = list(size=2)))
+
+# colored by race
+ggplot(data = gmds.res, aes(x = X1, y = X2)) + geom_point(aes(color = use.dat$race), cex = 0.5) +
+  labs(title = "Classical MDS: Race", color = "Race") +
+  scale_color_hue(labels = c("Undet.", "Asian","Black", "Hispanic","Nat. Am.", "Other race","White")) + 
+  guides(colour = guide_legend(override.aes = list(size=2)))
+
+# colored by body camera
+ggplot(data = gmds.res, aes(x = X1, y = X2)) +
+  geom_point(aes(color = use.dat$body_camera), cex = 0.5) +
+  labs(title = "Classical MDS: Body Camera", color = "Body Camera") +
+  guides(colour = guide_legend(override.aes = list(size=2)))
+
+#########################################################
+# PLOTS INVOLVING RACE
+
+### RACE IN FATAL SHOOTINGS
+race.counts <- table(use.dat$race)
+race.prop <- prop.table(race.counts)*100
+rownames(race.prop) <- factor(c("Undet.", "Asian", "Black", "Hispanic", "Nat. Am.", "Other race", "White"))
+race.prop <- data.frame(race.prop)
+
+ggplot(data = race.prop, aes(x = Var1, y = Freq)) + geom_bar(aes(fill = Var1), stat = "identity") +
+  labs(title = "Racial Breakdown: Fatal Police Shootings", y = "Percent", x = "") +
+  theme(axis.text=element_text(size=12)) + guides(fill = FALSE) + ylim(c(0,100))
+
+#########################################################
+
+### RACE IN THE US
+us.race <- c(0, 4.7, 12.2, 16.3, 0.9, 2.1, 63.7)
+us.race <- data.frame(us.race,race.prop[,1])
+
+ggplot(data = us.race, aes(x = race.prop[,1], y = us.race)) +
+  geom_bar(aes(fill = race.prop[,1]),stat = "identity") +
+  labs(title = "Racial Breakdown: U.S. Population", y = "Percent", x = "") +
+  theme(axis.text=element_text(size=12)) + guides(fill = FALSE) + ylim(c(0,100))
+
+#########################################################
+
+### RACE AND WEAPON
+rw.tab <- table(use.dat$race, use.dat$armed)
+rownames(rw.tab) <- factor(c("Undet.", "Asian", "Black", "Hispanic", "Nat. Am.", "Other race", "White"))
+
+rw.dat <- data.frame(prop.table(rw.tab,2)*100)
+colnames(rw.dat)[1] <- "Race"
+
+ggplot(data = rw.dat, aes(x = Race, y = Freq)) + facet_wrap(~Var2) +
+  geom_bar(aes(fill = Race), stat = "identity") + ylim(c(0,100)) + labs(y = "Percent", x = "") +
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  theme(strip.text = element_text(size = 11))
+
+#########################################################
+
+### RACE AND THREAT LEVEL
+ra.tab <- table(use.dat$race, use.dat$threat_level)
+rownames(ra.tab) <- factor(c("Undet.", "Asian", "Black", "Hispanic", "Nat. Am.", "Other race", "White"))
+
+ra.dat <- data.frame(prop.table(ra.tab,2)*100)
+colnames(ra.dat)[1] <- "Race"
+colnames(ra.dat)[2] <- "Threat"
+
+ggplot(data = ra.dat, aes(x = Race, y = Freq)) + facet_wrap(~Threat) +
+  geom_bar(aes(fill = Race), stat = "identity") + ylim(c(0,100)) + labs(y = "Percent", x = "") +
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  theme(strip.text = element_text(size = 11))
+
+ra.dat2 <- data.frame(prop.table(ra.tab,1)*100)
+colnames(ra.dat2)[1] <- "Race"
+colnames(ra.dat2)[2] <- "Threat"
+
+ggplot(data = ra.dat2, aes(x = Threat, y = Freq)) + facet_wrap(~Race) +
+  geom_bar(aes(fill = Threat), stat = "identity") + ylim(c(0,100)) + labs(y = "Percent", x = "") +
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  theme(strip.text = element_text(size = 11))
+
+#########################################################
+
+### RACE AND MENTAL ILLNESS
+rmi.tab <- table(use.dat$race, use.dat$signs_of_mental_illness)
+rownames(rmi.tab) <- factor(c("Undet.", "Asian", "Black", "Hispanic", "Nat. Am.", "Other race", "White"))
+colnames(rmi.tab) <- factor(c("No Signs of Mental Illness", "Signs of Mental Illness"))
+
+rmi.dat <- data.frame(prop.table(rmi.tab,2)*100)
+colnames(rmi.dat)[1] <- "Race"
+
+ggplot(data = rmi.dat, aes(x = Race, y = Freq)) + facet_wrap(~Var2) +
+  geom_bar(aes(fill = Race), stat = "identity") + ylim(c(0,100)) + labs(y = "Percent", x = "") +
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  theme(strip.text = element_text(size = 11))
+
+#########################################################
+
+### RACE AND BODY CAMERA
+rbc.tab <- table(use.dat$race, use.dat$body_camera)
+rownames(rbc.tab) <- factor(c("Undet.", "Asian", "Black", "Hispanic", "Nat. Am.", "Other race", "White"))
+colnames(rbc.tab) <- factor(c("No Body Camera", "Body Camera"))
+
+rbc.dat <- data.frame(prop.table(rbc.tab,2)*100)
+colnames(rbc.dat)[1] <- "Race"
+
+ggplot(data = rbc.dat, aes(x = Race, y = Freq)) + facet_wrap(~Var2) +
+  geom_bar(aes(fill = Race), stat = "identity") + ylim(c(0,100)) + labs(y = "Percent", x = "") +
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  theme(strip.text = element_text(size = 11))
+
+#########################################################
+
+### RACE AND FLEEING
+rf.tab <- table(use.dat$race, use.dat$flee)
+rownames(rf.tab) <- factor(c("Undet.", "Asian", "Black", "Hispanic", "Nat. Am.", "Other race", "White"))
+colnames(rf.tab)[1] <- "Undetermined"
+
+rf.dat <- data.frame(prop.table(rf.tab,2)*100)
+colnames(rf.dat)[1] <- "Race"
+
+ggplot(data = rf.dat, aes(x = Race, y = Freq)) + facet_wrap(~Var2) +
+  geom_bar(aes(fill = Race), stat = "identity") + ylim(c(0,100)) + labs(y = "Percent", x = "") +
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  theme(strip.text = element_text(size = 11))
+
+
+                
 
 ############################################################################################## Ed
 ps.data = readRDS(file.choose())
