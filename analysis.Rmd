@@ -1,13 +1,15 @@
 ---
 title: "Kaggle Titanic using penalized logistic regression"
-author: "Kidus, AsfawLaura Niss, Zoe Rhenberg, Ed Wu"
+author: "Kidus Asfaw, Laura Niss, Zoe Rhenberg, Ed Wu"
 date: "7/21/2017"
-output: github_document
+output: 
+  html_document:
+    code_folding: hide
 
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, cache = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE)
 library('plyr')
 library('ggplot2')
 library('e1071')
