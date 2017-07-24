@@ -1,5 +1,5 @@
 ---
-title: "Kaggle Titanic using penalized logistic regression"
+title: "Washington Post Fatal Police Shooting Data Analysis"
 author: "Kidus Asfaw, Laura Niss, Zoe Rhenberg, Ed Wu"
 date: "7/21/2017"
 output: 
